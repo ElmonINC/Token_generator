@@ -9,7 +9,7 @@ AUTHOR = "ELMON"
 # Dependencies (auto-detected, but we can add extras)
 build_exe_options = {
     "packages": ["os", "tkinter", "qrcode", "barcode", "cryptography", "pyperclip", "requests", "PIL"],
-    "include_files": ["logo.png"],
+    "include_files": ["logo.ico"],
     "optimize": 2,
 }
 
