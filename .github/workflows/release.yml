@@ -5,33 +5,73 @@ on:
     tags:
       - "v*.*.*"
 
+permissions:
+  contents: write  # Grant access to create releases
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
-
+    outputs:
+      artifacts: ${{ steps.upload-artifacts.outputs.artifact-url }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: |
+      - name: Install dependencies
+        run: |
           pip install -r requirements.txt
           pip install pyinstaller
-      - run: pyinstaller --onefile --windowed app.py
+      - name: Build with PyInstaller
+        run: pyinstaller --onefile --windowed app.py
       - name: Rename binaries
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then mv dist/app.exe app-win.exe; fi
           if [[ "$RUNNER_OS" == "Linux" ]]; then mv dist/app app-linux; fi
           if [[ "$RUNNER_OS" == "macOS" ]]; then mv dist/app app-mac; fi
-      - name: Release
-        uses: softprops/action-gh-release@v2
+      - name: Debug file existence
+        run: |
+          ls -la
+          echo "Checking for binaries in workspace"
+          ls -la dist/ || true  # Show dist/ contents, continue if empty
+      - name: Upload artifacts
+        id: upload-artifacts
+        uses: actions/upload-artifact@v4
         with:
-          files: |
+          name: binaries-${{ matrix.os }}
+          path: |
             app-win.exe
             app-linux
             app-mac
+          if-no-files-found: ignore  # Prevent failure if some files are missing
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Debug downloaded artifacts
+        run: |
+          ls -la artifacts/
+          ls -la artifacts/binaries-windows-latest/ || true
+          ls -la artifacts/binaries-ubuntu-latest/ || true
+          ls -la artifacts/binaries-macos-latest/ || true
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/binaries-windows-latest/app-win.exe
+            artifacts/binaries-ubuntu-latest/app-linux
+            artifacts/binaries-macos-latest/app-mac
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
