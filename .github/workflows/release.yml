@@ -32,8 +32,10 @@ jobs:
 
       - name: Build with PyInstaller
         run: |
-          pyinstaller --onefile --windowed app.py
-
+          pyinstaller --onefile --windowed app.py \
+            --icon=logo.png \
+            --add-data "logo.png;."
+            
       # ✅ OS-specific directory listing (fixes `ls -la` issue)
       - name: List dist/ (Windows)
         if: runner.os == 'Windows'
