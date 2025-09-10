@@ -1,3 +1,4 @@
+# Secure Token Generator with QR/Barcode and Update Checker
 import os
 import sys
 import json
@@ -20,8 +21,19 @@ from cryptography.fernet import Fernet
 # App Metadata
 # -------------------------------
 APP_NAME = "ElGen"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.08"
 GITHUB_REPO = "https://github.com/ElmonINC/Token_generator.git"  # Replace with your GitHub repo
+
+# -------------------------------
+# Resource Path (fix logo/icon in PyInstaller)
+# -------------------------------
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev & PyInstaller build."""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 
 # -------------------------------
@@ -58,7 +70,7 @@ def generate_qr(data, logo_path=None, save_path=None, file_format="PNG"):
     return img
 
 
-def generate_barcode(data, save_path=None, file_format="PNG"):
+def generate_barcode(data, save_path=None):
     code = Code128(data, writer=ImageWriter())
     if save_path:
         code.save(save_path)
@@ -134,9 +146,10 @@ class SecureTokenApp(tk.Tk):
         super().__init__()
         self.title(f"{APP_NAME} v{APP_VERSION}")
         self.geometry("700x600")
-        self.logo_path = "logo.png"
+        self.logo_path = resource_path("logo.png")  # fixed for PyInstaller
         self.developer_mode = tk.BooleanVar(value=False)
         self.auto_update_enabled = tk.BooleanVar(value=True)
+        self.dev_frame = None
 
         self.build_ui()
         self.after(2000, lambda: check_for_updates(auto=True, log=self.log_message))
@@ -178,39 +191,46 @@ class SecureTokenApp(tk.Tk):
         ttk.Button(btns, text="Generate QR", command=self.make_qr).pack(side="left", padx=5)
         ttk.Button(btns, text="Generate Barcode", command=self.make_barcode).pack(side="left", padx=5)
 
-        # Developer Mode
-        dev_toggle = ttk.Checkbutton(self, text="Developer Mode", variable=self.developer_mode, command=self.build_dev_ui)
+        # Developer Mode toggle
+        dev_toggle = ttk.Checkbutton(self, text="Developer Mode",
+                                     variable=self.developer_mode,
+                                     command=self.build_dev_ui)
         dev_toggle.pack(pady=5)
-
-        # Log console
-        self.log_text = tk.Text(self, height=5, state="disabled", bg="black", fg="lime")
-        self.log_text.pack(fill="x", padx=10, pady=5)
 
     def build_dev_ui(self):
         if self.developer_mode.get():
-            dev_frame = ttk.LabelFrame(self, text="Developer Options")
-            dev_frame.pack(fill="x", padx=10, pady=10)
+            if not self.dev_frame:
+                self.dev_frame = ttk.LabelFrame(self, text="Developer Options")
+                self.dev_frame.pack(fill="x", padx=10, pady=10)
 
-            # Bulk Token
-            ttk.Button(dev_frame, text="Generate 50 Tokens", command=lambda: self.bulk_tokens(50)).pack(side="left", padx=5)
-            ttk.Button(dev_frame, text="Generate 100 Tokens", command=lambda: self.bulk_tokens(100)).pack(side="left", padx=5)
+                # Bulk Token
+                ttk.Button(self.dev_frame, text="Generate 50 Tokens",
+                           command=lambda: self.bulk_tokens(50)).pack(side="left", padx=5)
+                ttk.Button(self.dev_frame, text="Generate 100 Tokens",
+                           command=lambda: self.bulk_tokens(100)).pack(side="left", padx=5)
 
-            # Update Controls
-            ttk.Checkbutton(dev_frame, text="Auto-update on startup", variable=self.auto_update_enabled).pack(side="left", padx=5)
-            ttk.Button(dev_frame, text="Check Update Now", command=lambda: check_for_updates(auto=False, log=self.log_message)).pack(side="left", padx=5)
+                # Update Controls
+                ttk.Checkbutton(self.dev_frame, text="Auto-update on startup",
+                                variable=self.auto_update_enabled).pack(side="left", padx=5)
+                ttk.Button(self.dev_frame, text="Check Update Now",
+                           command=lambda: check_for_updates(auto=False, log=self.log_message)).pack(side="left", padx=5)
 
-            # Encryption Test
-            enc_frame = ttk.LabelFrame(dev_frame, text="Encrypt / Decrypt")
-            enc_frame.pack(fill="x", padx=10, pady=10)
+                # Encryption Test
+                enc_frame = ttk.LabelFrame(self.dev_frame, text="Encrypt / Decrypt")
+                enc_frame.pack(fill="x", padx=10, pady=10)
 
-            self.enc_key = generate_key()
-            self.enc_input = tk.StringVar()
-            self.enc_output = tk.StringVar()
+                self.enc_key = generate_key()
+                self.enc_input = tk.StringVar()
+                self.enc_output = tk.StringVar()
 
-            ttk.Entry(enc_frame, textvariable=self.enc_input, width=30).pack(side="left", padx=5)
-            ttk.Button(enc_frame, text="Encrypt", command=self.do_encrypt).pack(side="left", padx=5)
-            ttk.Button(enc_frame, text="Decrypt", command=self.do_decrypt).pack(side="left", padx=5)
-            ttk.Entry(enc_frame, textvariable=self.enc_output, width=30).pack(side="left", padx=5)
+                ttk.Entry(enc_frame, textvariable=self.enc_input, width=30).pack(side="left", padx=5)
+                ttk.Button(enc_frame, text="Encrypt", command=self.do_encrypt).pack(side="left", padx=5)
+                ttk.Button(enc_frame, text="Decrypt", command=self.do_decrypt).pack(side="left", padx=5)
+                ttk.Entry(enc_frame, textvariable=self.enc_output, width=30).pack(side="left", padx=5)
+        else:
+            if self.dev_frame:
+                self.dev_frame.destroy()
+                self.dev_frame = None
 
     # --- Token ---
     def make_token(self):
@@ -237,7 +257,7 @@ class SecureTokenApp(tk.Tk):
             return messagebox.showwarning("Error", "Enter some data.")
         save_path = filedialog.asksaveasfilename(defaultextension=".png")
         if save_path:
-            img = generate_qr(data, logo_path=self.logo_path, save_path=save_path)
+            generate_qr(data, logo_path=self.logo_path, save_path=save_path)
             messagebox.showinfo("Saved", f"QR Code saved at {save_path}")
 
     def make_barcode(self):
@@ -267,10 +287,7 @@ class SecureTokenApp(tk.Tk):
 
     # --- Logger ---
     def log_message(self, msg):
-        self.log_text.configure(state="normal")
-        self.log_text.insert("end", msg + "\n")
-        self.log_text.configure(state="disabled")
-        self.log_text.see("end")
+        print(msg)  # simple fallback log (console)
 
 
 if __name__ == "__main__":
