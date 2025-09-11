@@ -1,0 +1,12 @@
+[Setup]
+AppName=ElGen
+AppVersion={#AppVersion}
+AppPublisher=ElmonINC
+AppPublisherURL=https://github.com/ElmonINC/Token_generator
+DefaultDirName={autopf}\ElGen
+DefaultGroupName=ElGen
+DisableProgramGroupPage=yes
+OutputBaseFilename=ElGenSetup
+SetupIconFile=dist\logo.ico
+Compression=lzma
+SolidCompression=yes

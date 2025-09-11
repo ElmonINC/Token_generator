@@ -1,7 +1,6 @@
 # Secure Token Generator with QR/Barcode and Update Checker
 import os
 import sys
-import json
 import random
 import string
 import tempfile
@@ -22,7 +21,8 @@ from cryptography.fernet import Fernet
 # -------------------------------
 APP_NAME = "ElGen"
 APP_VERSION = "1.1.08"
-GITHUB_REPO = "https://github.com/ElmonINC/Token_generator.git"  # Replace with your GitHub repo
+# Use owner/repo format for GitHub API
+GITHUB_REPO = "ElmonINC/Token_generator"
 
 # -------------------------------
 # Resource Path (fix logo/icon in PyInstaller)
@@ -35,7 +35,6 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-
 # -------------------------------
 # Token Generator
 # -------------------------------
@@ -46,7 +45,6 @@ def generate_token(length=16, letters=True, numbers=True):
     if numbers:
         chars += string.digits
     return "".join(random.choice(chars) for _ in range(length))
-
 
 # -------------------------------
 # QR & Barcode Generator
@@ -69,13 +67,11 @@ def generate_qr(data, logo_path=None, save_path=None, file_format="PNG"):
         img.save(save_path, file_format)
     return img
 
-
 def generate_barcode(data, save_path=None):
     code = Code128(data, writer=ImageWriter())
     if save_path:
         code.save(save_path)
     return code
-
 
 # -------------------------------
 # Update Checker
@@ -87,22 +83,38 @@ def check_for_updates(auto=True, log=None):
         if r.status_code != 200:
             return
         release = r.json()
-        latest_version = release["tag_name"].lstrip("v")
+        latest_version = release.get("tag_name", "").lstrip("v")
+        if not latest_version:
+            return
 
         if latest_version > APP_VERSION:
             if sys.platform.startswith("win") or sys.platform.startswith("linux"):
                 if messagebox.askyesno("Update Available", f"New version {latest_version} available.\nDownload now?"):
-                    asset = release["assets"][0]["browser_download_url"]
-                    download_and_replace(asset, log)
+                    # find suitable asset for this OS (prefer exact match)
+                    asset_url = None
+                    for a in release.get("assets", []):
+                        name = a.get("name","").lower()
+                        if sys.platform.startswith("win") and ("win" in name or name.endswith(".exe")):
+                            asset_url = a.get("browser_download_url")
+                            break
+                        if sys.platform.startswith("linux") and ("linux" in name or name.endswith(".AppImage") or name.endswith(".tar.gz") or "app-linux" in name):
+                            asset_url = a.get("browser_download_url")
+                            break
+                    # fallback to first asset
+                    if not asset_url and release.get("assets"):
+                        asset_url = release["assets"][0].get("browser_download_url")
+                    if asset_url:
+                        download_and_replace(asset_url, log)
+                    else:
+                        messagebox.showinfo("Update", "Update available but no suitable asset found.")
             elif sys.platform == "darwin":
-                messagebox.showinfo("Update Available", f"New version {latest_version} available.\n\nDownload manually.")
-                webbrowser.open(release["html_url"])
+                messagebox.showinfo("Update Available", f"New version {latest_version} available.\n\nPlease download manually.")
+                webbrowser.open(release.get("html_url", "https://github.com"))
     except Exception as e:
         if not auto:
             messagebox.showerror("Update Error", str(e))
         if log:
             log(f"[Error] Update failed: {e}")
-
 
 def download_and_replace(asset_url, log=None):
     exe_path = sys.executable
@@ -112,16 +124,26 @@ def download_and_replace(asset_url, log=None):
         log(f"[Update] Downloading update from {asset_url}")
 
     with requests.get(asset_url, stream=True) as r:
+        r.raise_for_status()
         with open(tmp_file, "wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
+                if chunk:
+                    f.write(chunk)
 
-    os.replace(tmp_file, exe_path)
+    # try to replace executable, using platform-appropriate updater if needed
+    try:
+        os.replace(tmp_file, exe_path)
+    except Exception:
+        # fallback: write next to exe and ask user to replace manually
+        alt = os.path.join(os.path.dirname(exe_path), os.path.basename(tmp_file))
+        os.replace(tmp_file, alt)
+        messagebox.showinfo("Update Downloaded", f"Update downloaded to:\n{alt}\nPlease replace the executable manually.")
+        return
+
     if log:
         log("[Update] Update complete, restarting app.")
     subprocess.Popen([exe_path])
     sys.exit(0)
-
 
 # -------------------------------
 # Encryption Utility
@@ -129,14 +151,11 @@ def download_and_replace(asset_url, log=None):
 def generate_key():
     return Fernet.generate_key()
 
-
 def encrypt_message(message, key):
     return Fernet(key).encrypt(message.encode()).decode()
 
-
 def decrypt_message(token, key):
     return Fernet(key).decrypt(token.encode()).decode()
-
 
 # -------------------------------
 # GUI App
@@ -146,13 +165,15 @@ class SecureTokenApp(tk.Tk):
         super().__init__()
         self.title(f"{APP_NAME} v{APP_VERSION}")
         self.geometry("700x600")
-        self.logo_path = resource_path("logo.png")  # fixed for PyInstaller
+        self.logo_path = resource_path("logo.png")
         self.developer_mode = tk.BooleanVar(value=False)
         self.auto_update_enabled = tk.BooleanVar(value=True)
         self.dev_frame = None
 
         self.build_ui()
-        self.after(2000, lambda: check_for_updates(auto=True, log=self.log_message))
+        # run update check only if auto_update_enabled True
+        if self.auto_update_enabled.get():
+            self.after(2000, lambda: check_for_updates(auto=True, log=self.log_message))
 
     def build_ui(self):
         # Header
@@ -162,6 +183,13 @@ class SecureTokenApp(tk.Tk):
             logo = Image.open(self.logo_path).resize((40, 40))
             self.logo_img = ImageTk.PhotoImage(logo)
             ttk.Label(header, image=self.logo_img).pack(side="left", padx=10)
+
+            # also set window/taskbar icon
+            try:
+                self.iconphoto(False, self.logo_img)
+            except Exception:
+                pass
+
         ttk.Label(header, text=APP_NAME, font=("Segoe UI", 16, "bold")).pack(side="left")
 
         # Token Section
@@ -198,8 +226,9 @@ class SecureTokenApp(tk.Tk):
         dev_toggle.pack(pady=5)
 
     def build_dev_ui(self):
+        # toggles dev_frame ON/OFF (create only once)
         if self.developer_mode.get():
-            if not self.dev_frame:
+            if self.dev_frame is None:
                 self.dev_frame = ttk.LabelFrame(self, text="Developer Options")
                 self.dev_frame.pack(fill="x", padx=10, pady=10)
 
@@ -227,8 +256,10 @@ class SecureTokenApp(tk.Tk):
                 ttk.Button(enc_frame, text="Encrypt", command=self.do_encrypt).pack(side="left", padx=5)
                 ttk.Button(enc_frame, text="Decrypt", command=self.do_decrypt).pack(side="left", padx=5)
                 ttk.Entry(enc_frame, textvariable=self.enc_output, width=30).pack(side="left", padx=5)
+
         else:
-            if self.dev_frame:
+            # hide/destroy dev_frame to toggle off
+            if self.dev_frame is not None:
                 self.dev_frame.destroy()
                 self.dev_frame = None
 
@@ -271,14 +302,14 @@ class SecureTokenApp(tk.Tk):
 
     # --- Encryption ---
     def do_encrypt(self):
-        text = self.enc_input.get()
+        text = self.enc_input.get() if hasattr(self, "enc_input") else ""
         if not text:
             return
         self.enc_output.set(encrypt_message(text, self.enc_key))
         self.log_message("[Encrypt] Message encrypted.")
 
     def do_decrypt(self):
-        token = self.enc_input.get()
+        token = self.enc_input.get() if hasattr(self, "enc_input") else ""
         try:
             self.enc_output.set(decrypt_message(token, self.enc_key))
             self.log_message("[Decrypt] Message decrypted.")
@@ -288,7 +319,6 @@ class SecureTokenApp(tk.Tk):
     # --- Logger ---
     def log_message(self, msg):
         print(msg)  # simple fallback log (console)
-
 
 if __name__ == "__main__":
     app = SecureTokenApp()
