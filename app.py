@@ -20,7 +20,7 @@ from cryptography.fernet import Fernet
 # App Metadata
 # -------------------------------
 APP_NAME = "ElGen"
-APP_VERSION = "1.1.09" # also update in installer.iss
+APP_VERSION = "1.1.1" # also update in installer.iss
 # Use owner/repo format for GitHub API
 GITHUB_REPO = "ElmonINC/Token_generator"
 
